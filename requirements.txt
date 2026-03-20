@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+aiohttp
+aiohttp-socks
+numpy
+scapy
+python-nmap
+paramiko
+cryptography
+shodan
+censys
+pyzoomeye
+python-telegram-bot[job-queue]
