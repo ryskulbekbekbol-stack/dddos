@@ -13,7 +13,6 @@ import logging
 import base64
 import socket
 import aiohttp
-import aiohttp_socks
 import asyncssh
 from fastapi import FastAPI
 import uvicorn
