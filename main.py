@@ -256,6 +256,17 @@ class IoTExploiter:
             return True
         return False
 
+    async def hack_all(self, devices):
+        """Перебирает список устройств и взламывает их"""
+        for dev in devices:
+            if dev.get('type') == 'camera':
+                await self.hack_camera(dev['ip'])
+            elif dev.get('type') == 'router':
+                await self.hack_router(dev['ip'])
+            else:
+                await self.hack_camera(dev['ip'])
+                await self.hack_router(dev['ip'])
+
     async def hack_device(self, ip, device_type=None, port=None):
         if device_type == 'camera':
             return await self.hack_camera(ip, port)
