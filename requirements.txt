@@ -1,6 +1,5 @@
 fastapi
 uvicorn
 aiohttp
-paramiko
-requests
+asyncssh
 python-telegram-bot[job-queue]
