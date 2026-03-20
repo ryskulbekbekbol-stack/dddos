@@ -229,7 +229,7 @@ def load_stats():
 
 def save_stats(stats):
     with open(STATS_FILE, 'w') as f:
-        json.dump(stats, f)15E
+        json.dump(stats, f)
 
 stats = load_stats()
 
