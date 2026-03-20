@@ -1,9 +1,7 @@
-
 fastapi
 uvicorn
 aiohttp
 aiohttp-socks
-numpy
 paramiko
 cryptography
 requests
