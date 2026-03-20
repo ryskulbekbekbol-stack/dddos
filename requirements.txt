@@ -6,3 +6,4 @@ paramiko
 cryptography
 requests
 shodan
+python-telegram-bot[job-queue]
