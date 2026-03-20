@@ -12,7 +12,6 @@ import asyncio
 import multiprocessing as mp
 import aiohttp
 import aiohttp_socks
-import numpy as np
 import random
 import time
 import json
